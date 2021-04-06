@@ -21,6 +21,8 @@ setup(
         "svgpath2mpl == 0.2.1",
         "tabulate == 0.8.7",
         "torch >= 1.6.0",
-        "systems == 0.1.0"],
+        "systems == 0.1.0",
+        "descartes == 1.1.0",
+        "figures == 0.4.0"],
     python_requires=">=3.6",
 )

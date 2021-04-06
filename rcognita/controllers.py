@@ -229,7 +229,7 @@ class ctrl_RL_pred:
     def __init__(self, dim_input, dim_output, mode=1, ctrl_bnds=[], ctrl_mode=[], t0=0, sampling_time=0.1, Nactor=1, pred_step_size=0.1,
                  sys_rhs=[], sys_out=[], x_sys=[], is_prob_noise = 0, prob_noise_pow = 1, model_est_stage=1, model_est_period=0.1, buffer_size=20, model_order=3, model_est_checks=0,
                  gamma=1, Ncritic=4, critic_period=0.1, critic_struct_Q=1, critic_struct_V=1, rcost_struct=1, model=None, optimizer=None, criterion=None, is_estimate_model=1, is_use_offline_model=0, rcost_pars=[],
-                 lr = None, feature_size = None, output_shape = None, layers = None, hidden_size = None, epochs = None, y_target=[]):
+                 lr = None, feature_size = None, output_shape = None, layers = None, hidden_size = None, epochs = None, y_target=[], obstacles=obstacles):
 
         self.dim_input = dim_input
         self.dim_output = dim_output
@@ -349,6 +349,8 @@ class ctrl_RL_pred:
         self.layers = layers
         self.hidden_size = hidden_size
         self.epochs = epochs
+#################################################################
+        self.obstacles = obstacles
 
     def reset(self, t0):
         """

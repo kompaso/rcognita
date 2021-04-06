@@ -31,10 +31,12 @@ Buffers are updated from bottom to top
 
 import numpy as np
 import numpy.linalg as la
-from rcognita.utilities import upd_line, reset_line, upd_scatter, upd_text, to_col_vec
+from rcognita.utilities import upd_line, reset_line, upd_scatter, upd_text, to_col_vec, plot_coords, plot_bounds, plot_line
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from shapely.geometry import Polygon
+from descartes.patch import PolygonPatch
 # !pip install mpldatacursor <-- to install this
 from mpldatacursor import datacursor
 
@@ -95,7 +97,7 @@ class animator_3wrobot(animator):
     Animator class for a 3-wheel robot.
 
     """
-    def __init__(self, objects=[], pars=[]):
+    def __init__(self, objects=[], pars=[], obstacles=[]):
         self.objects = objects
         self.pars = pars
 
@@ -115,6 +117,9 @@ class animator_3wrobot(animator):
         self.is_log_data = is_log_data
         self.is_playback = is_playback
 
+        #obstacles
+        self.obstacles = obstacles
+
         xCoord0 = x0[0]
         yCoord0 = x0[1]
         alpha0 = x0[2]
@@ -130,6 +135,10 @@ class animator_3wrobot(animator):
         self.axs_xy_plane.set_aspect('equal', adjustable='box')
         self.axs_xy_plane.plot([xMin, xMax], [0, 0], 'k--', lw=0.75)   # Help line
         self.axs_xy_plane.plot([0, 0], [yMin, yMax], 'k--', lw=0.75)   # Help line
+        for obstacle in self.obstacles:
+            # plot_coords(self.axs_xy_plane, self.polygon.exterior)
+            patch = PolygonPatch(obstacle, facecolor='r', edgecolor='black', alpha=0.7, zorder=1)
+            self.axs_xy_plane.add_patch(patch)
         self.line_traj, = self.axs_xy_plane.plot(xCoord0, yCoord0, 'b--', lw=0.5)
         self.robot_marker = robot_marker(angle=alpha_deg0)
         text_time = 't = {time:2.3f}'.format(time = t0)
@@ -306,15 +315,6 @@ class animator_3wrobot(animator):
             reset_line(self.line_icost)
             reset_line(self.lines_ctrl[0])
             reset_line(self.lines_ctrl[1])
-
-            # for item in self.lines:
-            #     if item != self.line_traj:
-            #         if isinstance(item, list):
-            #             for subitem in item:
-            #                 self.reset_line(subitem)
-            #                 print('line reset')
-            #         else:
-            #             self.reset_line(item)
 
             upd_line(self.line_traj, np.nan, np.nan)
 

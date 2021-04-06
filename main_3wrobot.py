@@ -45,7 +45,7 @@ from rcognita.utilities import on_key_press
 from argparse import ArgumentParser
 import os
 import warnings
-import shapely
+from shapely.geometry import Polygon
 warnings.filterwarnings('ignore')
 
 #------------------------------------user settings : : system
@@ -233,6 +233,9 @@ if args.init_alpha != None and args.init_x == None and args.init_y == None:
 else:
     coords = [(args.init_x, args.init_y, args.init_alpha)]
 
+obstacles = [Polygon([(0.5, 0.2), (0.5, 2), (2, 2), (2, 0.2), (0.5, 0.2)]),
+             Polygon([(-4, -4), (-4, -2), (-2, -2), (-2, -4), (-4, -4)])]
+
 #------------------------------------initialization : : system
 for coord in coords:
     x0[0] = coord[0]
@@ -276,7 +279,7 @@ for coord in coords:
                                           gamma=gamma, Ncritic=Ncritic, critic_period=critic_period, critic_struct_Q=critic_struct_Q,
                                           critic_struct_V=critic_struct_V, rcost_struct=rcost_struct, model=model, optimizer=optimizer,criterion=criterion,
                                           is_estimate_model=is_estimate_model, is_use_offline_model=is_use_offline_model, rcost_pars=[R1, R2],
-                                          lr = lr, feature_size = feature_size, output_shape = output_shape, layers = layers, hidden_size = hidden_size, epochs = epochs)
+                                          lr=lr, feature_size=feature_size, output_shape=output_shape, layers=layers, hidden_size=hidden_size, epochs=epochs, obstacles=obstacles)
 
     #------------------------------------initialization : : simulator
     my_simulator = simulator.simulator(sys_type="diff_eqn",
@@ -310,7 +313,7 @@ for coord in coords:
 
         my_animator = visuals.animator_3wrobot(objects=(my_simulator, my_3wrobot, my_ctrl_nominal_3wrobot, my_ctrl_RL, datafiles, controllers.ctrl_selector, my_logger),
                                                pars=(x0, u0, t0, t1, ksi0, xMin, xMax, yMin, yMax, ctrl_mode, uMan, Fmin, Mmin, Fmax, Mmax, Nruns,
-                                                     is_print_sim_step, is_log_data, 0, []))
+                                                     is_print_sim_step, is_log_data, 0, []), obstacles=obstacles)
 
         anm = animation.FuncAnimation(my_animator.fig_sim,
                                       my_animator.animate,

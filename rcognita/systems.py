@@ -300,6 +300,7 @@ class sys_3wrobot_endi(system):
 
     def out(self, x, u=[]):
         y = np.zeros(self.dim_output)
+
         # y = x[:3] + measNoise # <-- Measure only position and orientation
         y = x  # <-- Position, force and torque sensors on
         return y
@@ -373,7 +374,6 @@ class sys_3wrobot_kinematic(system):
 
         """
         Dq = np.zeros(self.dim_disturb)
-
         if self.is_disturb:
             sigma_q = self.pars_disturb[0]
             mu_q = self.pars_disturb[1]

@@ -38,6 +38,7 @@ from numpy import matrix, cos, arctan2, sqrt, pi, sin, cos
 from rcognita.utilities import on_key_press, gen_init_coords_angles
 import numpy as np
 import time as time_lib
+from numpy.random import randn
 
 #------------------------------------user settings
 
@@ -86,8 +87,23 @@ class Task:
         # Read current robot state
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
-
         q = msg.pose.pose.orientation
+
+
+        # dim_disturb = 2
+        # Dq = np.zeros(dim_disturb)
+        # is_disturb = 1
+        # if is_disturb:
+        #     sigma_q = 1e-3 * np.ones(dim_disturb)
+        #     mu_q = np.zeros(dim_disturb)
+        #     tau_q = np.ones(dim_disturb)
+        #
+        #     for k in range(0, dim_disturb):
+        #         pass
+        #         Dq[k] = - tau_q[k] * ( q[k] + sigma_q[k] ) # * (randn() + mu_q[k]) )
+        #
+        # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",Dq)
+
         cur_rpy = tftr.euler_from_quaternion((q.x, q.y, q.z, q.w))  # roll pitch yaw
         theta = cur_rpy[2]
 
@@ -211,6 +227,12 @@ class Task:
 
             new_vec = self.rotation_matrix.dot(np.transpose([vx, vy, 0]))
             v_new = sqrt(new_vec[0]**2 + new_vec[1]**2)
+
+            is_disturb = False
+            # print(u)
+            if is_disturb:
+                u += np.random.normal(0, 0.01, size=2)
+                u = np.clip(u, [-0.22, -2.0], [0.22, 2.0])
             #u = [v_new, u[1]]
             self.logger.log_data_row(self.datafile, self.t, xCoord, yCoord, alpha, v_new, w, r, icost, u)
 
@@ -221,6 +243,9 @@ class Task:
             #     velocity.linear.x = 0
             #     velocity.linear.z = 0
             # else:
+            # print(u)
+
+            # print(u)
             velocity.linear.x = u[0] #u[0]
             velocity.angular.z = u[1]
             self.pub_cmd_vel.publish(velocity)
@@ -308,7 +333,13 @@ if __name__ == "__main__":
     critic_struct_Q = 3
     critic_struct_V = 3
 
-    is_disturb = 0
+    is_disturb = 1
+
+    # Disturbance
+    sigma_q = 1e-3 * np.ones(dim_disturb)
+    mu_q = np.zeros(dim_disturb)
+    tau_q = np.ones(dim_disturb)
+
     # Static or dynamic controller
     is_dyn_ctrl = 0
 
@@ -328,7 +359,7 @@ if __name__ == "__main__":
         os.makedirs(new_path)
 
     ctrl_mode = args.mode
-    # pose_goal = [2.0, 3.0, pi]
+    # pose_goal = [10.0, 10.0, pi]
 
     name = [data_folder, 'RLsim__', ctrl_mode, '_',dt,'_',Nactor,'_',pred_step_size,'_',round(pose_goal[0],2),'_',round(pose_goal[1],2),'_',round(pose_goal[2],2), time,'.csv']
     name_str = list(map(str, name))
@@ -341,7 +372,7 @@ if __name__ == "__main__":
     my_logger = loggers.logger_3wrobot_kinematic()
 
     my_3wrobot = systems.sys_3wrobot_kinematic(sys_type="diff_eqn", dim_state=dim_state, dim_input=dim_input, dim_output=dim_output, dim_disturb=dim_disturb,
-                                     ctrl_bnds=np.array([[Vmin, Vmax], [Wmin, Wmax]]))
+                                     ctrl_bnds=np.array([[Vmin, Vmax], [Wmin, Wmax]]), is_disturb=is_disturb, pars_disturb=[sigma_q, mu_q, tau_q])
 
     my_ctrl_MPC = controllers.ctrl_RL_pred(dim_input, dim_output, args.mode,
                                            ctrl_bnds=ctrl_bnds,
@@ -353,7 +384,7 @@ if __name__ == "__main__":
                                           model_order=model_order, model_est_checks=model_est_checks,
                                           gamma=gamma, Ncritic=Ncritic, critic_period=critic_period, critic_struct_Q=critic_struct_Q, critic_struct_V=critic_struct_V, rcost_struct=rcost_struct, rcost_pars=[R1, R2])
 
-    my_ctrl_nominal_3wrobot = controllers.ctrl_nominal_kinematic_3wrobot(ctrl_bnds, pose_goal, t0=0, sampling_time=dt)
+    my_ctrl_nominal_3wrobot = controllers.ctrl_nominal_3wrobot_NI(ctrl_bnds=ctrl_bnds, ctrl_gain=0.1, t0=0, sampling_time=dt)
 
 
     task = Task(args.mode, [0, 0, 0], pose_goal, my_ctrl_nominal_3wrobot, my_3wrobot, my_ctrl_MPC, my_logger, datafile)

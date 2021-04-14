@@ -29,12 +29,13 @@ All buffers are treated as of type [L, n] where each row is a vector
 Buffers are updated from bottom to top
 """
 
-from rcognita.utilities import dss_sim, rep_mat, uptria2vec, push_vec
+from rcognita.utilities import dss_sim, rep_mat, uptria2vec, push_vec, state_constraint_indicator
 import numpy as np
 import scipy as sp
 from numpy.random import rand
 from scipy.optimize import minimize
 from scipy.optimize import basinhopping
+import math
 
 
 import torch
@@ -229,7 +230,7 @@ class ctrl_RL_pred:
     def __init__(self, dim_input, dim_output, mode=1, ctrl_bnds=[], ctrl_mode=[], t0=0, sampling_time=0.1, Nactor=1, pred_step_size=0.1,
                  sys_rhs=[], sys_out=[], x_sys=[], is_prob_noise = 0, prob_noise_pow = 1, model_est_stage=1, model_est_period=0.1, buffer_size=20, model_order=3, model_est_checks=0,
                  gamma=1, Ncritic=4, critic_period=0.1, critic_struct_Q=1, critic_struct_V=1, rcost_struct=1, model=None, optimizer=None, criterion=None, is_estimate_model=1, is_use_offline_model=0, rcost_pars=[],
-                 lr = None, feature_size = None, output_shape = None, layers = None, hidden_size = None, epochs = None, y_target=[], obstacles=obstacles):
+                 lr = None, feature_size = None, output_shape = None, layers = None, hidden_size = None, epochs = None, y_target=[], obstacles=[]):
 
         self.dim_input = dim_input
         self.dim_output = dim_output
@@ -350,7 +351,8 @@ class ctrl_RL_pred:
         self.hidden_size = hidden_size
         self.epochs = epochs
 #################################################################
-        self.obstacles = obstacles
+        self.obstacles = []
+        self.obstacle_penalty = 10e7
 
     def reset(self, t0):
         """
@@ -375,21 +377,27 @@ class ctrl_RL_pred:
 
         See class documentation
         """
+        constraint_penalty = 0
         if self.y_target == []:
             chi = np.concatenate([y, u])
         else:
             chi = np.concatenate([y - self.y_target, u])
 
+        # for obstacle in self.obstacles:
+        #     # new_obstacle = obstacle.buffer(1.0)
+        #     constraint_penalty = state_constraint_indicator(obstacle, y, self.obstacle_penalty)
+        #     if constraint_penalty != 0:
+        #         break
         r = 0
 
         if self.rcost_struct == 1:
             R1 = self.rcost_pars[0]
-            r = chi @ R1 @ chi
+            r = chi @ R1 @ chi #+ constraint_penalty
         elif self.rcost_struct == 2:
             R1 = self.rcost_pars[0]
             R2 = self.rcost_pars[1]
 
-            r = chi**2 @ R2 @ chi**2 + chi @ R1 @ chi
+            r = chi**2 @ R2 @ chi**2 + chi @ R1 @ chi  #+ constraint_penalty
 
         return r
 
@@ -568,6 +576,7 @@ class ctrl_RL_pred:
         myU = np.reshape(U, [self.Nactor, self.dim_input])
 
         Y = np.zeros([self.Nactor, self.dim_output])
+
 
         # System output prediction
         if (self.mode==1) or (self.mode==2) or (self.mode==3) or (self.mode==4):    # Via exogenously passed model
@@ -775,9 +784,9 @@ class ctrl_nominal_3wrobot:
         #                               sigma
         #                                         3
         #                                     |x |
-        #            4     4                     | 3|
+        #                 4     4                     | 3|
         # F(x; theta) = x  +  x  +  ----------------------------------------
-        #            1     2
+        #                 1     2
         #                        /                                     \ 2
         #                        | x cos theta + x sin theta + sqrt|x | |
         #                        \ 1             2                | 3| /
@@ -823,7 +832,7 @@ class ctrl_nominal_3wrobot:
 
         sigma_tilde = xNI[0]*np.cos(theta) + xNI[1]*np.sin(theta) + np.sqrt(np.abs(xNI[2]))
 
-        F = xNI[0]**4 + xNI[1]**4 + np.abs( xNI[2] )**3 / sigma_tilde
+        F = xNI[0]**4 + xNI[1]**4 + np.abs( xNI[2] )**3 / sigma_tilde ** 2
 
         z = eta - self._kappa(xNI, theta)
 
@@ -931,6 +940,258 @@ class ctrl_nominal_3wrobot:
 
         else:
             return self.uCurr
+
+class ctrl_nominal_3wrobot_NI:
+    #### https://arxiv.org/pdf/2006.14013.pdf
+    #### https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&
+    """
+    This is a class of nominal controllers for 3-wheel robots used for benchmarking of other controllers.
+
+    The controller is sampled.
+
+    For a 3-wheel robot with dynamical pushing force and steering torque (a.k.a. ENDI - extended non-holonomic double integrator) [[1]_], we use here
+    a controller designed by non-smooth backstepping (read more in [[2]_], [[3]_])
+
+    Attributes
+    ----------
+    m, I : : numbers
+        Mass and moment of inertia around vertical axis of the robot
+    ctrl_gain : : number
+        Controller gain
+    t0 : : number
+        Initial value of the controller's internal clock
+    sampling_time : : number
+        Controller's sampling time (in seconds)
+
+    References
+    ----------
+    .. [1] W. Abbasi, F. urRehman, and I. Shah. “Backstepping based nonlinear adaptive control for the extended
+           nonholonomic double integrator”. In: Kybernetika 53.4 (2017), pp. 578–594
+
+    ..   [2] Matsumoto, R., Nakamura, H., Satoh, Y., and Kimura, S. (2015). Position control of two-wheeled mobile robot
+             via semiconcave function backstepping. In 2015 IEEE Conference on Control Applications (CCA), 882–887
+
+    ..   [3] Osinenko, Pavel, Patrick Schmidt, and Stefan Streif. "Nonsmooth stabilization and its computational aspects." arXiv preprint arXiv:2006.14013 (2020)
+
+    """
+
+    def __init__(self, ctrl_gain=10, ctrl_bnds=[], t0=0, sampling_time=0.1):
+        # self.m = m
+        # self.I = I
+        self.ctrl_gain = ctrl_gain
+        self.ctrl_bnds = ctrl_bnds
+        self.ctrl_clock = t0
+        self.sampling_time = sampling_time
+
+        self.uCurr = np.zeros(2)
+
+    def reset(self, t0):
+        """
+        Resets controller for use in multi-episode simulation
+
+        """
+        self.ctrl_clock = t0
+        self.uCurr = np.zeros(2)
+
+
+    def _zeta(self, xNI):
+        """
+        Generic, i.e., theta-dependent, subgradient (disassembled) of a CLF for NI (a.k.a. nonholonomic integrator, a 3wheel robot with static actuators)
+
+        """
+
+        #                                 3
+        #                             |x |
+        #         4     4             | 3|
+        # V(x) = x  +  x  +  ----------------------------------=   min F(x)
+        #         1     2                                        theta
+        #                     /     / 2   2 \             \ 2
+        #                    | sqrt| x + x   | + sqrt|x |  |
+        #                     \     \ 1   2 /        | 3| /
+        #                        \_________  __________/
+        #                                 \/
+        #                               sigma
+        #                                         3
+        #                                     |x |
+        #            4     4                     | 3|
+        # F(x; theta) = x  +  x  +  ----------------------------------------
+        #            1     2
+        #                        /                                     \ 2
+        #                        | x cos theta + x sin theta + sqrt|x | |
+        #                        \ 1             2                | 3| /
+        #                           \_______________  ______________/
+        #                                            \/
+        #                                            sigma~
+
+        theta = 0
+
+        sigma = math.sqrt(xNI[0]**2 + xNI[1]**2) + math.sqrt(abs(xNI[2]))
+
+        nabla_L = np.zeros(3)
+        nabla_L[0] = 4 * xNI[0]**3 + 2 * xNI[0] * abs(xNI[2]) / sigma**3 * 1 / (math.sqrt(xNI[0]**2 + xNI[1]**2))**3
+        nabla_L[1] = 4 * xNI[1]**3 + 2 * xNI[1] * abs(xNI[2]) / sigma**3 * 1 / (math.sqrt(xNI[0]**2 + xNI[1]**2))**3
+        nabla_L[2] = 3 * abs(xNI[2])**2 * np.sign(xNI[2]) + abs(xNI[2])**3 / sigma**3 * 1/math.sqrt(abs(xNI[2])) * np.sign(xNI[2])
+
+        sigma_tilde = xNI[0]*np.cos(theta) + xNI[1]*np.sin(theta) + np.sqrt(np.abs(xNI[2]))
+
+        nablaF = np.zeros(3)
+
+        nablaF[0] = 4*xNI[0]**3 - 2 * np.abs(xNI[2])**3 * np.cos(theta)/sigma_tilde**3
+
+        nablaF[1] = 4*xNI[1]**3 - 2 * np.abs(xNI[2])**3 * np.sin(theta)/sigma_tilde**3
+
+        nablaF[2] = ( 3*xNI[0]*np.cos(theta) + 3*xNI[1]*np.sin(theta) + 2*np.sqrt(np.abs(xNI[2])) ) * xNI[2]**2 * np.sign(xNI[2]) / sigma_tilde**3
+
+        zeta = np.zeros(3);
+        if xNI[0] == 0 and xNI[1] == 0:
+            zeta = nablaF
+        else:
+            zeta = nabla_L
+
+        return zeta
+
+    def _kappa(self, xNI):
+        """
+        Stabilizing controller for NI-part
+
+        """
+        kappa_val = np.zeros(2)
+
+        G = np.zeros([3, 2])
+        G[:,0] = np.array([1, 0, xNI[1]])
+        G[:,1] = np.array([0, 1, -xNI[0]])
+
+        zeta_val = self._zeta(xNI)
+
+        kappa_val[0] = - np.abs( np.dot( zeta_val, G[:,0] ) )**(1/3) * np.sign( np.dot( zeta_val, G[:,0] ) )
+        kappa_val[1] = - np.abs( np.dot( zeta_val, G[:,1] ) )**(1/3) * np.sign( np.dot( zeta_val, G[:,1] ) )
+
+        return kappa_val
+
+    # def _Fc(self, xNI, theta):
+    #     """
+    #     Marginal function for ENDI constructed by nonsmooth backstepping. See details in the literature mentioned in the class documentation
+    #
+    #     """
+    #
+    #     sigma_tilde = xNI[0]*np.cos(theta) + xNI[1]*np.sin(theta) + np.sqrt(np.abs(xNI[2]))
+    #
+    #     F = xNI[0]**4 + xNI[1]**4 + np.abs( xNI[2] )**3 / sigma_tilde**2
+    #
+    #     # z = self._kappa(xNI, theta)
+    #
+    #     return F  #+ 1/2 * np.dot(z, z)
+    #
+    # def _minimizer_theta(self, xNI):
+    #     thetaInit = 0
+    #
+    #     bnds = sp.optimize.Bounds(-np.pi, np.pi, keep_feasible=False)
+    #
+    #     options = {'maxiter': 50, 'disp': False}
+    #
+    #     theta_val = minimize(lambda theta: self._Fc(xNI, theta), thetaInit, method='trust-constr', tol=1e-6, bounds=bnds, options=options).x
+    #
+    #     return theta_val
+
+    def _Cart2NH(self, coords_Cart):
+        """
+        Transformation from Cartesian coordinates to non-holonomic (NH) coordinates
+        See Section VIII.A in [[1]_]
+
+        The transformation is a bit different since the 3rd NI eqn reads for our case as: :math:`\\dot x_3 = x_2 u_1 - x_1 u_2`
+
+        References
+        ----------
+        .. [1] Watanabe, K., Yamamoto, T., Izumi, K., & Maeyama, S. (2010, October). Underactuated control for nonholonomic mobile robots by using double
+               integrator model and invariant manifold theory. In 2010 IEEE/RSJ International Conference on Intelligent Robots and Systems (pp. 2862-2867)
+
+        """
+
+        xNI = np.zeros(3)
+
+        xc = coords_Cart[0]
+        yc = coords_Cart[1]
+        alpha = coords_Cart[2]
+
+        xNI[0] = alpha
+        xNI[1] = xc * np.cos(alpha) + yc * np.sin(alpha)
+        xNI[2] = - 2 * ( yc * np.cos(alpha) - xc * np.sin(alpha) ) - alpha * ( xc * np.cos(alpha) + yc * np.sin(alpha) )
+
+        # xNI[0] = alpha
+        # xNI[1] = xc * np.cos(alpha) + yc * np.sin(alpha)
+        # xNI[2] = - 2 * ( xc * np.sin(alpha) - yc * np.cos(alpha) ) + alpha * ( xc * np.cos(alpha) + yc * np.sin(alpha) )
+
+        # eta[0] = omega
+        # eta[1] = ( yc * np.cos(alpha) - xc * np.sin(alpha) ) * omega + v
+
+        # return [xNI, eta]
+        return xNI
+
+    def _NH2ctrl_Cart(self, xNI, uNI):
+        """
+        Get control for Cartesian NI from NH coordinates
+        See Section VIII.A in [[1]_]
+
+        The transformation is a bit different since the 3rd NI eqn reads for our case as: :math:`\\dot x_3 = x_2 u_1 - x_1 u_2`
+
+        References
+        ----------
+        .. [1] Watanabe, K., Yamamoto, T., Izumi, K., & Maeyama, S. (2010, October). Underactuated control for nonholonomic mobile robots by using double
+               integrator model and invariant manifold theory. In 2010 IEEE/RSJ International Conference on Intelligent Robots and Systems (pp. 2862-2867)
+
+
+        """
+
+        uCart = np.zeros(2)
+
+        uCart[1] = uNI[0]
+        uCart[0] = uNI[1] + 1/2 * uNI[0] * (xNI[2] + xNI[0] * xNI[1])
+
+        return uCart
+
+    def compute_action(self, t, y):
+        """
+        See algorithm description in [[1]_], [[2]_]
+
+        **This algorithm needs full-state measurement of the robot**
+
+        References
+        ----------
+        .. [1] Matsumoto, R., Nakamura, H., Satoh, Y., and Kimura, S. (2015). Position control of two-wheeled mobile robot
+               via semiconcave function backstepping. In 2015 IEEE Conference on Control Applications (CCA), 882–887
+
+        .. [2] Osinenko, Pavel, Patrick Schmidt, and Stefan Streif. "Nonsmooth stabilization and its computational aspects." arXiv preprint arXiv:2006.14013 (2020)
+
+        """
+
+        time_in_sample = t - self.ctrl_clock
+
+        if time_in_sample >= self.sampling_time: # New sample
+
+            # This controller needs full-state measurement
+            xNI = self._Cart2NH(y)
+            # xNI = y
+            # theta_star = self._minimizer_theta(xNI)
+            kappa_val = self._kappa(xNI)
+            uNI = self.ctrl_gain * kappa_val
+            u = self._NH2ctrl_Cart(xNI, uNI)
+            # u = uNI
+
+
+            #
+            if self.ctrl_bnds.any():
+                for k in range(2):
+                    u[k] = np.clip(u[k], self.ctrl_bnds[k, 0], self.ctrl_bnds[k, 1])
+
+            # print(u)
+
+            self.uCurr = u
+
+            return u
+
+        else:
+            return self.uCurr
+
 
 
 class ctrl_nominal_kinematic_3wrobot:

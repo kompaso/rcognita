@@ -53,8 +53,8 @@ warnings.filterwarnings('ignore')
 parser = ArgumentParser()
 parser.add_argument('--mode', type=int, default=3)
 parser.add_argument('--system', type=str, default='kinematic')
-parser.add_argument('--init_x', type=int, default=None)
-parser.add_argument('--init_y', type=int, default=None)
+parser.add_argument('--init_x', type=float, default=None)
+parser.add_argument('--init_y', type=float, default=None)
 parser.add_argument('--init_alpha', type=float, default=None)
 parser.add_argument('--ndots', type=int, default=25)
 parser.add_argument('--radius', type=int, default=5)
@@ -92,6 +92,11 @@ if args.system == 'kinematic':
     dim_output = 3
     dim_disturb = 2
 
+    # Fmin = -100
+    # Fmax = 100
+    # Mmin = -100
+    # Mmax = 100
+
     Fmin = -0.22
     Fmax = 0.22
     Mmin = -2
@@ -119,7 +124,7 @@ elif args.system == 'endi':
     m = 10 # [kg]
     I = 1 # [kg m^2]
 
-    R1 = np.diag([10, 15, 10, 0, 0, 5, 17])  # No mixed terms, full-state measurement
+    R1 = np.diag([1, 100, 10, 0, 0, 5, 17])  # No mixed terms, full-state measurement
     R2 = np.array([[10, 2, 1, 0, 0], [0, 10, 2, 0, 0], [0, 0, 10, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0]])  # mixed terms in y
 
 # Disturbance
@@ -154,6 +159,7 @@ model_order = 5
 prob_noise_pow = 8
 # Model estimator stores models in a stack and recall the best of model_est_checks
 model_est_checks = 0
+is_disturb = 1
 
 #------------------------------------user settings : : controller
 
@@ -206,7 +212,6 @@ is_visualization = args.is_visualization
 is_print_sim_step = args.is_print_sim_step
 is_prob_noise = args.is_prob_noise
 
-is_disturb = 0
 
 # Static or dynamic controller
 is_dyn_ctrl = 0
@@ -233,8 +238,9 @@ if args.init_alpha != None and args.init_x == None and args.init_y == None:
 else:
     coords = [(args.init_x, args.init_y, args.init_alpha)]
 
-obstacles = [Polygon([(0.5, 0.2), (0.5, 2), (2, 2), (2, 0.2), (0.5, 0.2)]),
-             Polygon([(-4, -4), (-4, -2), (-2, -2), (-2, -4), (-4, -4)])]
+obstacles = [Polygon([(1.5, 1.5), (1.5, 3.9), (4.9, 3.9), (4.9, 1.5), (1.5, 1.5)])] #,
+             # Polygon([(2, -2), (2, 0), (8, 0), (8, -2), (2, -2)])]
+# obstacles = []
 
 #------------------------------------initialization : : system
 for coord in coords:
@@ -243,9 +249,13 @@ for coord in coords:
     x0[2] = coord[2]
 
     if args.system == 'kinematic':
+
+        # my_3wrobot = systems.sys_3wrobot_3NI(sys_type="diff_eqn", dim_state=dim_state, dim_input=dim_input, dim_output=dim_output, dim_disturb=dim_disturb,
+        #                                  pars=[m, I],
+        #                                  ctrl_bnds=np.array([[Fmin, Fmax], [Mmin, Mmax]]))
         my_3wrobot = systems.sys_3wrobot_kinematic(sys_type="diff_eqn", dim_state=dim_state, dim_input=dim_input, dim_output=dim_output, dim_disturb=dim_disturb,
-                                         pars=[m, I],
-                                         ctrl_bnds=np.array([[Fmin, Fmax], [Mmin, Mmax]]))
+                                         pars=[m, I], is_disturb=is_disturb,
+                                         ctrl_bnds=np.array([[Fmin, Fmax], [Mmin, Mmax]]), pars_disturb=[sigma_q, mu_q, tau_q])
         my_logger = loggers.logger_3wrobot_kinematic()
     elif args.system =='endi':
         my_3wrobot = systems.sys_3wrobot_endi(sys_type="diff_eqn", dim_state=dim_state, dim_input=dim_input, dim_output=dim_output, dim_disturb=dim_disturb,
@@ -264,9 +274,10 @@ for coord in coords:
     ctrl_bnds = np.array([[Fmin, Fmax], [Mmin, Mmax]])
 
     if args.system.lower() == 'kinematic':
-        my_ctrl_nominal_3wrobot = controllers.ctrl_nominal_kinematic_3wrobot(ctrl_bnds=ctrl_bnds, pose_goal = [2.0, 3.0, 0.0], t0=t0, sampling_time=dt)
+        my_ctrl_nominal_3wrobot = controllers.ctrl_nominal_3wrobot_NI(ctrl_bnds=ctrl_bnds, ctrl_gain=0.1, t0=t0, sampling_time=dt)
+        # my_ctrl_nominal_3wrobot = controllers.ctrl_nominal_3wrobot(m, I, ctrl_bnds=ctrl_bnds, ctrl_gain=4, t0=t0, sampling_time=dt)
     elif args.system.lower() == 'endi':
-        my_ctrl_nominal_3wrobot = controllers.ctrl_nominal_3wrobot(m, I, ctrl_gain=0.5, ctrl_bnds=ctrl_bnds, t0=t0, sampling_time=dt)
+        my_ctrl_nominal_3wrobot = controllers.ctrl_nominal_3wrobot(m, I, ctrl_gain=1, ctrl_bnds=ctrl_bnds, t0=t0, sampling_time=dt)
 
     my_ctrl_RL = controllers.ctrl_RL_pred(dim_input, dim_output,
                                           ctrl_mode, ctrl_bnds=ctrl_bnds,

@@ -137,7 +137,9 @@ class animator_3wrobot(animator):
         self.axs_xy_plane.plot([0, 0], [yMin, yMax], 'k--', lw=0.75)   # Help line
         for obstacle in self.obstacles:
             # plot_coords(self.axs_xy_plane, self.polygon.exterior)
-            patch = PolygonPatch(obstacle, facecolor='r', edgecolor='black', alpha=0.7, zorder=1)
+            patch = PolygonPatch(obstacle, facecolor='r', edgecolor='black', alpha=0.5, zorder=1)
+            self.axs_xy_plane.add_patch(patch)
+            patch = PolygonPatch(obstacle.buffer(1.0), facecolor='b', edgecolor='black', alpha=0.5, zorder=1)
             self.axs_xy_plane.add_patch(patch)
         self.line_traj, = self.axs_xy_plane.plot(xCoord0, yCoord0, 'b--', lw=0.5)
         self.robot_marker = robot_marker(angle=alpha_deg0)

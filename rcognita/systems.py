@@ -391,6 +391,95 @@ class sys_3wrobot_kinematic(system):
         y = x  # <-- Position, force and torque sensors on
         return y
 
+class sys_3wrobot_3NI(system):
+    """
+    System class: 3-wheel robot with dynamical actuators.
+
+    Description
+    -----------
+    Three-wheel robot with dynamical pushing force and steering torque (a.k.a. ENDI - extended non-holonomic double integrator) [[1]_]
+
+    .. math::
+        \\begin{array}{ll}
+    			\dot x_с & = v \cos \\alpha \\newline
+    			\dot y_с & = v \sin \\alpha \\newline
+    			\dot \\alpha & = \\omega \\newline
+    			\dot v & = \\left( \\frac 1 m F + q_1 \\right) \\newline
+    			\dot \\omega & = \\left( \\frac 1 I M + q_2 \\right)
+        \\end{array}
+
+    **Variables**
+
+    | :math:`x_с` : x-coordinate [m]
+    | :math:`y_с` : y-coordinate [m]
+    | :math:`\\alpha` : turning angle [rad]
+    | :math:`v` : speed [m/s]
+    | :math:`\\omega` : revolution speed [rad/s]
+    | :math:`F` : pushing force [N]
+    | :math:`M` : steering torque [Nm]
+    | :math:`m` : robot mass [kg]
+    | :math:`I` : robot moment of inertia around vertical axis [kg m\ :sup:`2`]
+    | :math:`q` : actuator disturbance (see :func:`~RLframe.system.disturbDyn`). Is zero if ``is_disturb = 0``
+
+    :math:`x = [x_c, y_c, \\alpha, v, \\omega]`
+
+    :math:`u = [F, M]`
+
+    ``pars`` = :math:`[m, I]`
+
+    References
+    ----------
+    .. [1] W. Abbasi, F. urRehman, and I. Shah. “Backstepping based nonlinear adaptive control for the extended
+        nonholonomic double integrator”. In: Kybernetika 53.4 (2017), pp. 578–594
+
+    """
+    def _state_dyn(self, t, x, u, q):
+
+
+        Dx = np.zeros(self.dim_state)
+        Dx[0] = u[0]
+        Dx[1] = u[1]
+        Dx[2] = x[1]*u[0] - x[0]*u[1]
+
+        return Dx
+
+    def _disturb_dyn(self, t, q):
+        """
+        Description
+        -----------
+
+        We use here a 1st-order stochastic linear system of the type
+
+        .. math:: \mathrm d Q_t = - \\frac{1}{\\tau_q} \\left( Q_t \\mathrm d t + \\sigma_q ( \\mathrm d B_t + \\mu_q ) \\right) ,
+
+        where :math:`B` is the standard Brownian motion, :math:`Q` is the stochastic process whose realization is :math:`q`, and
+        :math:`\\tau_q, \\sigma_q, \\mu_q` are the time constant, standard deviation and mean, resp.
+
+        ``pars_disturb = [sigma_q, mu_q, tau_q]``, with each being an array of shape ``[dim_disturb, ]``
+
+        """
+        Dq = np.zeros(self.dim_disturb)
+
+        if self.is_disturb:
+            sigma_q = self.pars_disturb[0]
+            mu_q = self.pars_disturb[1]
+            tau_q = self.pars_disturb[2]
+
+            for k in range(0, self.dim_disturb):
+                Dq[k] = - tau_q[k] * ( q[k] + sigma_q[k] * (randn() + mu_q[k]) )
+
+        return Dq
+
+    def out(self, x, u=[]):
+
+        y = np.zeros(self.dim_output)
+        # y = x[:3] + measNoise # <-- Measure only position and orientation
+        y = x  # <-- Position, force and torque sensors on
+        return y
+
+
+
+
 class sys_2tank(system):
     """
     Two-tank system with nonlinearity
@@ -411,4 +500,4 @@ class sys_2tank(system):
 
     def out(self, x, u=[]):
         y = x
-        return y   
+        return y

@@ -922,6 +922,7 @@ class ctrl_nominal_3wrobot:
 
         if time_in_sample >= self.sampling_time: # New sample
 
+
             # This controller needs full-state measurement
             xNI, eta = self._Cart2NH( y )
             theta_star = self._minimizer_theta(xNI, eta)
@@ -1157,7 +1158,7 @@ class ctrl_nominal_3wrobot_NI:
 
         References
         ----------
-        .. [1] Matsumoto, R., Nakamura, H., Satoh, Y., and Kimura, S. (2015). Position control of two-wheeled mobile robot
+        .. [1] Matsumoto, dtR., Nakamura, H., Satoh, Y., and Kimura, S. (2015). Position control of two-wheeled mobile robot
                via semiconcave function backstepping. In 2015 IEEE Conference on Control Applications (CCA), 882–887
 
         .. [2] Osinenko, Pavel, Patrick Schmidt, and Stefan Streif. "Nonsmooth stabilization and its computational aspects." arXiv preprint arXiv:2006.14013 (2020)
@@ -1167,6 +1168,7 @@ class ctrl_nominal_3wrobot_NI:
         time_in_sample = t - self.ctrl_clock
 
         if time_in_sample >= self.sampling_time: # New sample
+
 
             # This controller needs full-state measurement
             xNI = self._Cart2NH(y)

@@ -33,6 +33,7 @@ from nav_msgs.msg import Odometry
 from tf.transformations import euler_from_quaternion
 from geometry_msgs.msg import Point, Twist
 from math import atan2, pi
+import math
 import tf.transformations as tftr
 from numpy import matrix, cos, arctan2, sqrt, pi, sin, cos
 from rcognita.utilities import on_key_press, gen_init_coords_angles
@@ -72,6 +73,10 @@ class Task:
         self.logger = logger
         self.mode = mode
 
+        self.rotation_counter = 0
+        self.prev_theta = 0
+        self.new_theta = 0
+
         theta_goal = self.pose_goal[2]
 
         self.rotation_matrix = np.array([
@@ -106,6 +111,7 @@ class Task:
 
         cur_rpy = tftr.euler_from_quaternion((q.x, q.y, q.z, q.w))  # roll pitch yaw
         theta = cur_rpy[2]
+        print("THETA INIT", theta)
 
         dx = msg.twist.twist.linear.x
         dy = msg.twist.twist.linear.y
@@ -144,11 +150,45 @@ class Task:
 
         invT = np.linalg.inv(t_mtarix)
         #print(invT)
-        new_theta = theta - pose_goal[2]
-        if new_theta > pi:
-            new_theta -= 2 * pi
-        elif new_theta < -pi:
-            new_theta += 2 * pi
+
+
+        # import math
+        #
+        #
+        if math.copysign(1, self.prev_theta) != math.copysign(1, theta) and abs(self.prev_theta) > 3:
+            if math.copysign(1, self.prev_theta) == -1:
+                print(1)
+                self.rotation_counter -= 1
+            else:
+                print(2)
+                self.rotation_counter += 1
+
+        self.prev_theta = theta
+        theta = theta + 2 * math.pi * self.rotation_counter
+        #
+        print("UPDATE", theta)
+        self.new_theta = theta
+
+
+
+        """
+
+        rotation_counter = 0
+        if theta_ros >= pi - eps
+            my_theta = my_theta + 2 pi
+            rotation_counter += 1
+        elseif theta_ros <= -pi
+            my_theta = my_theta - 2 pi
+            rotation_counter -= 1
+        else
+            my_theta = theta_ros + 2 * pi * rotation_counter
+        """
+
+        new_theta = theta - theta_goal#pose_goal[2]
+        # if new_theta > pi:
+        #     new_theta -= 2 * pi
+        # elif new_theta < -pi:
+        #     new_theta += 2 * pi
 
         # new_theta = theta - pose_goal[2]
         # if new_theta > pi:
@@ -188,7 +228,7 @@ class Task:
 
         time_prev = 0.0
         self.time_start = rospy.get_time()
-        while not rospy.is_shutdown() and time_lib.time() - start_time < 300:
+        while not rospy.is_shutdown() and time_lib.time() - start_time < 200:
             t = rospy.get_time() - self.time_start
             self.t = t
             print("TIME", time_lib.time() - start_time)
@@ -203,13 +243,14 @@ class Task:
             velocity = Twist()
             # print("Y, hello from other side", self.new_dstate)
 
-            u = controllers.ctrl_selector(self.t, self.new_state, uMan, self.ctrl_nominal, self.ctrl_MPC, self.mode)
+            # u = controllers.ctrl_selector(self.t, self.new_state, uMan, self.ctrl_nominal, self.ctrl_MPC, self.mode)
+            u = self.ctrl_nominal.compute_action(self.t, self.new_state)
 
 
             self.ctrl_MPC.upd_icost(self.new_state, u)
             r = self.ctrl_MPC.rcost(self.new_state, u)
             icost = self.ctrl_MPC.icost_val
-            print("INTEGRAL COST", icost)
+            # print("INTEGRAL COST", icost)
             # print("NEEEEEEEEW", new2u)
 
             #self.system.receive_action(u_to_robot)
@@ -228,24 +269,29 @@ class Task:
             new_vec = self.rotation_matrix.dot(np.transpose([vx, vy, 0]))
             v_new = sqrt(new_vec[0]**2 + new_vec[1]**2)
 
-            is_disturb = False
+            is_disturb = True
             # print(u)
             if is_disturb:
-                u += np.random.normal(0, 0.01, size=2)
+                u += np.random.normal(0, 0.5, size=2) #0.01
                 u = np.clip(u, [-0.22, -2.0], [0.22, 2.0])
             #u = [v_new, u[1]]
-            self.logger.log_data_row(self.datafile, self.t, xCoord, yCoord, alpha, v_new, w, r, icost, u)
+            self.logger.log_data_row(self.datafile, self.t, xCoord, yCoord, self.new_theta, v_new, w, r, icost, u)
 
             # self.new_dstate = [self.new_dstate[0], self.new_dstate[1], self.new_dstate[5]]
-            # u = self.ctrl_nominal.compute_action(self.t, self.new_state)
+
+            # velocity.linear.x = 0
+            # velocity.angular.z = 1.0
+
+
             #print("CONTROL", u)
+            # delta = 0.1
             # if sqrt(self.new_state[0] ** 2 + self.new_state[1] ** 2) < delta and abs(self.new_state[2]) < delta:
             #     velocity.linear.x = 0
             #     velocity.linear.z = 0
             # else:
-            # print(u)
-
-            # print(u)
+            # # print(u)
+            #
+            # # print(u)
             velocity.linear.x = u[0] #u[0]
             velocity.angular.z = u[1]
             self.pub_cmd_vel.publish(velocity)
@@ -318,6 +364,7 @@ if __name__ == "__main__":
     # pose_goal = [2.0, 2.0, pi]
     # m = 0
     # I = 0
+    print(pose_goal)
 
     rcost_struct = 1
 
@@ -384,7 +431,7 @@ if __name__ == "__main__":
                                           model_order=model_order, model_est_checks=model_est_checks,
                                           gamma=gamma, Ncritic=Ncritic, critic_period=critic_period, critic_struct_Q=critic_struct_Q, critic_struct_V=critic_struct_V, rcost_struct=rcost_struct, rcost_pars=[R1, R2])
 
-    my_ctrl_nominal_3wrobot = controllers.ctrl_nominal_3wrobot_NI(ctrl_bnds=ctrl_bnds, ctrl_gain=0.1, t0=0, sampling_time=dt)
+    my_ctrl_nominal_3wrobot = controllers.ctrl_nominal_3wrobot_NI(ctrl_bnds=ctrl_bnds, ctrl_gain=0.025, t0=0, sampling_time=dt)
 
 
     task = Task(args.mode, [0, 0, 0], pose_goal, my_ctrl_nominal_3wrobot, my_3wrobot, my_ctrl_MPC, my_logger, datafile)
